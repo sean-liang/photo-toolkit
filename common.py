@@ -6,26 +6,26 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv'}
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 def is_image_file(file_path):
-    """判断文件是否为图片"""
+    """Check if the file is an image"""
     return Path(file_path).suffix.lower() in IMAGE_EXTENSIONS
 
 def is_video_file(file_path):
-    """判断文件是否为视频"""
+    """Check if the file is a video"""
     return Path(file_path).suffix.lower() in VIDEO_EXTENSIONS
 
 def find_media_files(work_dir, exclude_dirs=None):
     """
-    遍历目录查找媒体文件
+    Traverse directory to find media files
     
     Args:
-        work_dir: str, 要搜索的工作目录
-        exclude_dirs: list, 要排除的目录名列表，默认为None
+        work_dir: str, working directory to search
+        exclude_dirs: list, list of directory names to exclude, defaults to None
     """
     if exclude_dirs is None:
         exclude_dirs = []
         
     for root, dirs, files in os.walk(work_dir):
-        # 修改 dirs 列表来排除不需要的目录
+        # Modify dirs list to exclude unwanted directories
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
         
         for file in files:
