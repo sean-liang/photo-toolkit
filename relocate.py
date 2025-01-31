@@ -9,10 +9,9 @@ from tqdm import tqdm
 import re
 import piexif
 import ffmpeg
-import json
 import dbm
 from build_hash_index import calculate_file_hash, check_file_duplicate, process_duplicate_file
-from common import MEDIA_EXTENSIONS, find_media_files, is_image_file, is_video_file
+from common import find_media_files, is_image_file, is_video_file
 
 def get_earliest_file_date(file_path):
     """Get the earliest date between file creation and modification dates"""
