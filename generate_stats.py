@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import plotly.graph_objects as go
 from tqdm import tqdm
+import webbrowser
 
 def scan_directory(work_dir):
     stats = defaultdict(lambda: defaultdict(int))
@@ -66,7 +67,7 @@ def generate_html_table(stats, years, months):
     html += '</tr>'
     
     # Add data rows
-    for year in years:
+    for year in sorted(years, reverse=True):
         html += f'<tr><td>{year}</td>'
         for month in months:
             count = stats[year].get(month, 0)
@@ -124,7 +125,7 @@ def generate_month_plot(stats, year):
     return fig.to_html(full_html=False, include_plotlyjs=True)
 
 def generate_report(stats, output_file):
-    years = sorted(stats.keys())
+    years = sorted(stats.keys(), reverse=True)
     months = list(range(1, 13))
     
     # Generate navigation links
@@ -193,6 +194,10 @@ def generate_report(stats, output_file):
     # Save to file
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(html_content)
+    
+    # Open in default browser
+    abs_path = str(Path(output_file).resolve())
+    webbrowser.open(f'file://{abs_path}')
 
 def main():
     if len(sys.argv) != 2:

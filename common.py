@@ -33,3 +33,23 @@ def find_media_files(work_dir, exclude_dirs=None):
                 full_path = os.path.join(root, file)
                 rel_path = os.path.relpath(full_path, work_dir)
                 yield rel_path, full_path
+
+def find_all_files(work_dir, exclude_dirs=None):
+    """
+    Traverse directory to find all files
+    
+    Args:
+        work_dir: str, working directory to search
+        exclude_dirs: list, list of directory names to exclude, defaults to None
+    """
+    if exclude_dirs is None:
+        exclude_dirs = []
+        
+    for root, dirs, files in os.walk(work_dir):
+        # Modify dirs list to exclude unwanted directories
+        dirs[:] = [d for d in dirs if d not in exclude_dirs]
+        
+        for file in files:
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, work_dir)
+            yield rel_path, full_path

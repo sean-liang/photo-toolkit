@@ -5,12 +5,18 @@ from pillow_heif import register_heif_opener
 from PIL import Image
 from tqdm import tqdm
 
-def convert_heic_to_jpeg(input_dir: str, output_dir: str):
+def convert_heic_to_jpeg(input_dir: str, output_dir: str = None):
     # Register HEIF file opener
     register_heif_opener()
     
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
+    if output_dir is None:
+        parent_dir = os.path.dirname(input_dir)
+        output_dir = os.path.join(parent_dir, f'{os.path.basename(input_dir)}_heic_to_jpg')
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+    else:
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
     
     # Collect all HEIC files
     heic_files = []
@@ -44,7 +50,7 @@ def convert_heic_to_jpeg(input_dir: str, output_dir: str):
 def main():
     parser = argparse.ArgumentParser(description='Convert HEIC files to JPEG format')
     parser.add_argument('input_dir', help='Input directory path (containing HEIC files)')
-    parser.add_argument('output_dir', help='Output directory path (for saving JPEG files)')
+    parser.add_argument('output_dir', nargs='?', help='Output directory path (for saving JPEG files)')
     
     args = parser.parse_args()
     convert_heic_to_jpeg(args.input_dir, args.output_dir)
