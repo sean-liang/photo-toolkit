@@ -5,9 +5,10 @@ from tqdm import tqdm
 import piexif
 import os
 import argparse
+import sys
 
 from core.common import get_image_earliest_date, find_files, is_image_file, is_video_file, get_video_earliest_date, get_earliest_file_date
-from core.indexer import BaseIndexer, HashLibHasher
+from core.indexer import BaseIndexer
 
 def get_media_date(file_path, custom_date=None):
     """Get media file creation date"""
@@ -21,40 +22,35 @@ def get_media_date(file_path, custom_date=None):
     else:
         return get_earliest_file_date(file_path)
 
-def get_new_filename(date, original_path, target_dir, file_hash):
-    """
-    Generate new filename and path in format: YYYY/MM/YYYYMMDDHHMMSS_HASH.ext
+def get_new_filename(date, src_path: Path, output_dir: Path, file_hash: str) -> tuple[str, str]:
+    """Generate new filename based on date and hash.
     
     Args:
-        date: datetime, file date
-        original_path: Path, original file path
-        target_dir: Path, target root directory
-        file_hash: str, hash of the file
-    
+        date: datetime object
+        src_path: source file path
+        output_dir: output directory path
+        file_hash: file hash value
+        
     Returns:
-        tuple: (relative path, full path)
+        tuple[str, str]: (relative path, absolute path)
     """
-    # Get year and month info
-    year = date.strftime('%Y')
-    month = date.strftime('%m')
-    
-    # Build target subdirectory path
-    sub_dir = os.path.join(year, month)
-    
-    # Get timestamp string
-    timestamp = date.strftime('%Y%m%d%H%M%S')
+    # Create year and month directories
+    year_dir = f"{date.year:04d}"
+    month_dir = f"{date.month:02d}"
     
     # Keep original file extension
-    ext = original_path.suffix.lower()
+    extension = src_path.suffix.lower()
     
-    # Generate new filename using timestamp and hash
-    filename = f"{timestamp}_{file_hash}{ext}"
+    # Create filename with date and hash
+    filename = f"{date.strftime('%Y%m%d%H%M%S')}_{file_hash}{extension}"
     
-    # Return relative path and full path
-    rel_path = os.path.join(sub_dir, filename)
-    full_path = os.path.join(target_dir, rel_path)
+    # Create relative path
+    rel_path = str(Path(year_dir) / month_dir / filename)
     
-    return rel_path, full_path
+    # Create absolute path
+    abs_path = str(output_dir / rel_path)
+    
+    return rel_path, abs_path
 
 def set_image_date(image_path, target_date):
     """Set image EXIF date information"""
@@ -84,7 +80,7 @@ def set_image_date(image_path, target_date):
     except Exception as e:
         print(f"Warning: Unable to modify EXIF information for {image_path}: {str(e)}")
 
-def process_media(input_dir, output_dir, dry_run=False, custom_date=None, hash_algo="sha256", index_uri=None, move=False):
+def process_media(input_dir, output_dir, dry_run=False, custom_date=None, index_uri=None, move=False):
     """Process all media files
     
     Args:
@@ -92,8 +88,8 @@ def process_media(input_dir, output_dir, dry_run=False, custom_date=None, hash_a
         output_dir: str, output directory path
         dry_run: bool, if True, only show what would be done without actually copying files
         custom_date: datetime, custom date to use for all files
-        hash_algo: str, hash algorithm to use
-        index_uri: str, URI for the index storage
+        index_uri: str, URI for the index storage, format: scheme[+hash_algo]://filename
+                  e.g. 'dbm+sha256://hash.index' or 'dbm://hash.index'
         move: bool, if True, move files instead of copying them
     """
     # Ensure output directory exists
@@ -102,9 +98,9 @@ def process_media(input_dir, output_dir, dry_run=False, custom_date=None, hash_a
         
     # Create indexer
     if index_uri is None:
-        index_uri = f"dbm://{os.path.join(output_dir, 'hash.index')}"
-    hasher = HashLibHasher(hash_algo)
-    indexer = BaseIndexer.create(index_uri, hasher)
+        index_uri = "dbm+sha256://hash.index"
+    
+    indexer = BaseIndexer.create(index_uri, output_dir)
     
     try:
         # Find all media files
@@ -117,50 +113,53 @@ def process_media(input_dir, output_dir, dry_run=False, custom_date=None, hash_a
         # Use tqdm to show progress
         with tqdm(total=len(media_files), desc="Processing files") as pbar:
             with indexer:
-                for file in media_files:
+                for rel_path, full_path in media_files:
                     try:
                         # Get file creation date
-                        date = get_media_date(file, custom_date)
+                        date = get_media_date(full_path, custom_date)
                         
-                        # Generate new filename and path
-                        new_rel_path, new_path = get_new_filename(date, Path(file), Path(output_dir), hasher.hash_file(file))
-                        
-                        if not dry_run:
-                            # Check for duplicates first
-                            added, _ = indexer.add_if_absent(file)
-                            
-                            if not added:
-                                # File is a duplicate
-                                duplicate_count += 1
-                                pbar.set_postfix(processed=processed_count, duplicates=duplicate_count)
-                                pbar.update(1)
-                                continue
-                            
-                            # Create target directory (if not exists)
-                            os.makedirs(os.path.dirname(new_path), exist_ok=True)
-                            
-                            # Copy or move file
-                            if move:
-                                shutil.move(file, new_path)
-                            else:
-                                shutil.copy2(file, new_path)
-                            
-                            # If it's an image file, try to set EXIF date
-                            if custom_date is not None and is_image_file(new_path):
-                                set_image_date(new_path, date)
-                            
-                            # Update processed file count
-                            processed_count += 1
-                            pbar.set_postfix(processed=processed_count, duplicates=duplicate_count)
-                        else:
+                        # Calculate hash value
+                        file_hash = indexer.hasher.calculate(full_path)
+
+                        if dry_run:
                             # In dry-run mode, just show what would be done
                             action = "move" if move else "copy"
-                            tqdm.write(f"Would {action}: {file} -> {new_path}")
+                            tqdm.write(f"Would {action}: {full_path} -> {get_new_filename(date, Path(full_path), Path(output_dir), file_hash)[1]}")
+                            pbar.update(1)
+                            continue
+
+                        if indexer.exists(file_hash=file_hash):
+                            # File already exists in index
+                            duplicate_count += 1
+                            pbar.set_postfix(processed=processed_count, duplicates=duplicate_count)
+                            pbar.update(1)
+                            continue
+
+                        # Generate new filename and path
+                        new_rel_path, new_path = get_new_filename(date, Path(full_path), Path(output_dir), file_hash)
+
+                        # Create target directory (if not exists)
+                        os.makedirs(os.path.dirname(new_path), exist_ok=True)
                         
+                        # Copy or move file
+                        if move:
+                            shutil.move(full_path, new_path)
+                        else:
+                            shutil.copy2(full_path, new_path)
+                        
+                        # If it's an image file, try to set EXIF date
+                        if custom_date is not None and is_image_file(new_path):
+                            set_image_date(new_path, date)
+
+                        # Add file to index with pre-calculated hash
+                        indexer.add(new_path, file_hash)
+                        
+                        # Update processed file count
+                        processed_count += 1
+                        pbar.set_postfix(processed=processed_count, duplicates=duplicate_count)
                         pbar.update(1)
-                        
                     except Exception as e:
-                        tqdm.write(f"Error processing {file}: {str(e)}")
+                        tqdm.write(f"Error processing {full_path}: {str(e)}")
                 
         # Show final statistics after progress bar completion
         print(f"\nProcessing complete:")
@@ -175,35 +174,39 @@ def process_media(input_dir, output_dir, dry_run=False, custom_date=None, hash_a
         indexer.close()
 
 def main():
-    parser = argparse.ArgumentParser(description="Organize photos into specified directory by date")
-    parser.add_argument('input_dir', help="Input directory path")
-    parser.add_argument('output_dir', help="Output directory path")
-    parser.add_argument('--dry-run', action='store_true', help="Only show what would be done without actually copying files")
-    parser.add_argument('--date', help="Specify date time in format: YYYY-MM-DD HH:MM:SS, if not specified will read from EXIF")
-    parser.add_argument('--hash-algo', default="sha256", choices=['md5', 'sha1', 'sha256', 'sha512'],
-                      help="Hash algorithm to use (default: sha256)")
-    parser.add_argument('--index-uri', help="URI for the index storage")
-    parser.add_argument('--move', action='store_true', help="Move files instead of copying them")
+    """Main function."""
+    parser = argparse.ArgumentParser(description="Import media files to organized storage")
+    parser.add_argument("input_directory", help="Input directory path")
+    parser.add_argument("output_directory", help="Output directory path")
+    parser.add_argument("--dry-run", "-n", action="store_true",
+                      help="Show what would be done without actually copying files")
+    parser.add_argument("--custom-date",
+                      help="Custom date to use for all files (format: YYYY-MM-DD)")
+    parser.add_argument("--index-uri",
+                      help="URI for the index storage, format: scheme[+hash_algo]://filename")
+    parser.add_argument("--move", "-m", action="store_true",
+                      help="Move files instead of copying them")
     
     args = parser.parse_args()
     
-    # Validate input directory exists
-    if not os.path.isdir(args.input_dir):
-        print(f"Error: Input directory '{args.input_dir}' does not exist")
-        return
-    
-    # Parse custom date
+    # Parse custom date if provided
     custom_date = None
-    if args.date:
+    if args.custom_date:
         try:
-            custom_date = datetime.strptime(args.date, '%Y-%m-%d %H:%M:%S')
+            custom_date = datetime.strptime(args.custom_date, "%Y-%m-%d")
         except ValueError:
-            print("Error: Invalid date format, please use YYYY-MM-DD HH:MM:SS format")
-            return
+            print(f"Error: Invalid date format: {args.custom_date}")
+            sys.exit(1)
     
     # Process media files
-    process_media(args.input_dir, args.output_dir, args.dry_run, custom_date, 
-                 args.hash_algo, args.index_uri, args.move)
+    process_media(
+        args.input_directory,
+        args.output_directory,
+        args.dry_run,
+        custom_date,
+        args.index_uri,
+        args.move
+    )
 
 if __name__ == '__main__':
     main()

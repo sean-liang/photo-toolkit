@@ -8,34 +8,31 @@ from core.common import find_files
 from core.indexer import BaseIndexer, HashLibHasher
 
 
-def build_hash_index(work_dir, dups_dir="dups", hash_algo="sha256", index_uri=None, verbose=False, dry_run=False):
+def build_hash_index(work_dir, dups_dir="dups", index_uri=None, verbose=False, dry_run=False):
     """
-    Build hash index for media files in specified directory
+    Build hash index for media files.
     
     Args:
-        work_dir: str, path to working directory
-        dups_dir: str, directory for storing duplicates, defaults to "dups"
-        hash_algo: str, hash algorithm to use, defaults to "sha256"
-        index_uri: str, URI for the index storage, defaults to "dbm://./hash.index"
-        verbose: bool, whether to print detailed logs, defaults to False
-        dry_run: bool, if True, only show what would be done without actually moving files
+        work_dir: Working directory path
+        dups_dir: Directory for storing duplicates
+        index_uri: URI for the index storage, format: scheme[+hash_algo]://filename
+                  e.g. 'dbm+sha256://hash.index' or 'dbm://hash.index'
+        verbose: Whether to print detailed logs
+        dry_run: Whether to run in dry-run mode
     """
     # If index URI is not specified, use default
     if index_uri is None:
-        index_uri = f"dbm://{os.path.join(work_dir, 'hash.index')}"
+        index_uri = "dbm+sha256://hash.index"
+    
+    # Create indexer
+    indexer = BaseIndexer.create(index_uri, work_dir)
     
     # Create duplicates directory
     dups_path = os.path.join(work_dir, dups_dir)
     if not dry_run:
         os.makedirs(dups_path, exist_ok=True)
     
-    # Create hasher
-    hasher = HashLibHasher(hash_algo)
-    
     try:
-        # Create indexer
-        indexer = BaseIndexer.create(index_uri, hasher)
-        
         # Find all media files
         media_files = list(find_files(work_dir, exclude_dirs=[dups_dir]))
         total_files = len(media_files)
@@ -100,9 +97,8 @@ def main():
     parser.add_argument("work_directory", help="Path to working directory")
     parser.add_argument("--dups-dir", default="dups",
                       help="Directory for storing duplicates (default: dups)")
-    parser.add_argument("--hash-algo", default="sha256", choices=['md5', 'sha1', 'sha256', 'sha512'],
-                      help="Hash algorithm to use (default: sha256)")
-    parser.add_argument("--index-uri", help="URI for the index storage")
+    parser.add_argument("--index-uri", 
+                      help="URI for the index storage, format: scheme[+hash_algo]://filename")
     parser.add_argument("--verbose", "-v", action="store_true",
                       help="Print detailed logs")
     parser.add_argument("--dry-run", "-n", action="store_true",
@@ -117,7 +113,7 @@ def main():
         sys.exit(1)
 
     # Build index
-    build_hash_index(work_dir, args.dups_dir, args.hash_algo, args.index_uri, args.verbose, args.dry_run)
+    build_hash_index(work_dir, args.dups_dir, args.index_uri, args.verbose, args.dry_run)
 
 
 if __name__ == "__main__":

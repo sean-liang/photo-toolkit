@@ -77,7 +77,7 @@ def generate_html_table(stats, years, months):
     html += '</table>'
     return html
 
-def generate_year_plot(stats, years):
+def generate_year_plot(stats, years, include_js=True):
     # Calculate yearly totals
     yearly_totals = []
     for year in years:
@@ -99,9 +99,9 @@ def generate_year_plot(stats, years):
         margin=dict(l=50, r=50, t=50, b=50)  
     )
     
-    return fig.to_html(full_html=False, include_plotlyjs=True)
+    return fig.to_html(full_html=False, include_plotlyjs=include_js)
 
-def generate_month_plot(stats, year):
+def generate_month_plot(stats, year, include_js=False):
     months = list(range(1, 13))
     month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -155,7 +155,7 @@ def generate_month_plot(stats, year):
     table_html += '</tr></table>'
     
     # Combine plot and table
-    return fig.to_html(full_html=False, include_plotlyjs=True) + table_html
+    return fig.to_html(full_html=False, include_plotlyjs=include_js) + table_html
 
 def generate_report(stats, output_file):
     years = sorted(stats.keys(), reverse=True)
@@ -168,13 +168,13 @@ def generate_report(stats, output_file):
         nav_links += f'<a href="#{year}" style="margin-right: 15px;">{year}</a>'
     nav_links += '</div>'
     
-    # Generate yearly statistics plot
-    yearly_plot = generate_year_plot(stats, years)
+    # Generate yearly statistics plot (include plotly.js)
+    yearly_plot = generate_year_plot(stats, years, include_js=True)
     
-    # Generate monthly plots for each year
+    # Generate monthly plots for each year (without plotly.js)
     monthly_plots = []
     for year in years:
-        monthly_plots.append((year, generate_month_plot(stats, year)))
+        monthly_plots.append((year, generate_month_plot(stats, year, include_js=False)))
     
     # Generate table
     table_html = generate_html_table(stats, years, months)

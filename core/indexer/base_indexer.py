@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Dict, Type, Tuple
+from typing import Dict, Type, Optional, Tuple
 from urllib.parse import urlparse
 
-from .hasher import Hasher
+from .hasher import Hasher, HashLibHasher
 
 
 class BaseIndexer(ABC):
-    """Base class for all indexers."""
+    """Base class for file indexers."""
     
     # Registry for indexer types
     _indexer_types: Dict[str, Type['BaseIndexer']] = {}
@@ -20,55 +20,64 @@ class BaseIndexer(ABC):
             hasher: Hasher instance to use for file hashing
         """
         self.db_path = db_path
-        self.hasher = hasher
+        self._hasher = hasher
         self._db = None
+    
+    @property
+    def hasher(self) -> Hasher:
+        """Get current hasher instance."""
+        return self._hasher
     
     @classmethod
     def register(cls, scheme: str, indexer_cls: Type['BaseIndexer']) -> None:
         """Register an indexer type for a specific URI scheme.
         
         Args:
-            scheme: URI scheme (e.g., 'dbm')
+            scheme: URI scheme
             indexer_cls: Indexer class to register
         """
         cls._indexer_types[scheme] = indexer_cls
     
     @classmethod
-    def parse_uri(cls, uri: str) -> Tuple[str, str]:
-        """Parse URI into scheme and path.
+    def parse_uri(cls, uri: str) -> tuple[str, str, str]:
+        """Parse URI into scheme, path and hash algorithm.
         
         Args:
-            uri: URI string (e.g., 'dbm://./hash.index')
+            uri: URI for the index storage, format: scheme[+hash_algo]://filename
+                e.g. 'dbm+sha256://hash.index' or 'dbm://hash.index'
             
         Returns:
-            tuple: (scheme, path)
+            tuple[str, str, str]: (scheme, filename, hash_algorithm)
             
         Raises:
             ValueError: If URI format is invalid
         """
         try:
-            parsed = urlparse(uri)
-            if not parsed.scheme:
-                raise ValueError("URI must have a scheme")
-            
-            # Convert path to absolute path
-            path = parsed.netloc + parsed.path
-            if path.startswith('//'):
-                path = path[2:]  # Remove leading //
-            if not path:
-                raise ValueError("URI must have a path")
+            # Split URI into scheme and filename parts
+            if "://" not in uri:
+                raise ValueError("URI must contain '://'")
                 
-            return parsed.scheme, path
+            scheme_part, filename = uri.split("://", 1)
+            if not scheme_part or not filename:
+                raise ValueError("Missing scheme or filename")
+                
+            # Parse scheme and hash algorithm
+            scheme_parts = scheme_part.split("+", 1)
+            scheme = scheme_parts[0]
+            hash_algorithm = scheme_parts[1] if len(scheme_parts) > 1 else "sha256"
+            
+            return scheme, filename, hash_algorithm
         except Exception as e:
             raise ValueError(f"Invalid URI format: {uri}") from e
     
     @classmethod
-    def create(cls, uri: str, hasher: Hasher) -> 'BaseIndexer':
+    def create(cls, uri: str, work_dir: str) -> 'BaseIndexer':
         """Create an indexer instance based on URI.
         
         Args:
-            uri: URI string (e.g., 'dbm://./hash.index')
-            hasher: Hasher instance to use
+            uri: URI for the index storage, format: scheme[+hash_algo]://filename
+                e.g. 'dbm+sha256://hash.index' or 'dbm://hash.index'
+            work_dir: Working directory where the index file will be stored
             
         Returns:
             BaseIndexer: An instance of appropriate indexer type
@@ -76,17 +85,22 @@ class BaseIndexer(ABC):
         Raises:
             ValueError: If URI scheme is not supported or URI format is invalid
         """
-        scheme, path = cls.parse_uri(uri)
+        # Parse URI
+        scheme, filename, hash_algorithm = cls.parse_uri(uri)
         
+        # Check if scheme is supported
         if scheme not in cls._indexer_types:
-            raise ValueError(
-                f"Unsupported indexer type: {scheme}. "
-                f"Supported types: {', '.join(cls._indexer_types.keys())}"
-            )
+            raise ValueError(f"Unsupported URI scheme: {scheme}")
+            
+        # Check if filename contains path separators
+        if any(sep in filename for sep in ['/', '\\']):
+            raise ValueError(f"URI should only contain filename without path: {filename}")
+            
+        # Create full path by joining work_dir and filename
+        path = str(Path(work_dir) / filename)
         
-        # Convert path to absolute path if it's relative
-        if not Path(path).is_absolute():
-            path = str(Path(path).resolve())
+        # Create hasher
+        hasher = HashLibHasher(hash_algorithm)
         
         # Create indexer instance
         return cls._indexer_types[scheme](path, hasher)
@@ -98,7 +112,7 @@ class BaseIndexer(ABC):
         Args:
             uri: URI string (e.g., 'dbm://./hash.index')
         """
-        scheme, path = cls.parse_uri(uri)
+        scheme, path = cls.parse_uri(uri)[:2]
         
         if scheme not in cls._indexer_types:
             raise ValueError(
@@ -128,11 +142,12 @@ class BaseIndexer(ABC):
         pass
     
     @abstractmethod
-    def add(self, file_path: str) -> str:
+    def add(self, file_path: str, file_hash: Optional[str] = None) -> str:
         """Add a file to the index.
         
         Args:
             file_path: Path to the file to add
+            file_hash: Optional pre-calculated hash value
             
         Returns:
             str: Hash value of the added file
@@ -140,14 +155,18 @@ class BaseIndexer(ABC):
         pass
     
     @abstractmethod
-    def remove(self, file_path: str) -> Optional[str]:
+    def remove(self, file_path: Optional[str] = None, file_hash: Optional[str] = None) -> Optional[str]:
         """Remove a file from the index.
         
         Args:
-            file_path: Path to the file
+            file_path: Path to the file, optional if file_hash is provided
+            file_hash: Hash of the file, optional if file_path is provided
             
         Returns:
             Optional[str]: Hash value of the removed file if it existed, None otherwise
+            
+        Raises:
+            ValueError: If neither file_path nor file_hash is provided
         """
         pass
         
@@ -164,26 +183,46 @@ class BaseIndexer(ABC):
         pass
     
     @abstractmethod
-    def get(self, file_path: str) -> Optional[str]:
-        """Get relative path by file path.
+    def get(self, file_path: Optional[str] = None, file_hash: Optional[str] = None) -> Optional[str]:
+        """Get relative path by file path or hash.
         
         Args:
-            file_path: Path to the file
+            file_path: Path to the file, optional if file_hash is provided
+            file_hash: Hash of the file, optional if file_path is provided
             
         Returns:
             str: Relative path if found, None otherwise
+            
+        Raises:
+            ValueError: If neither file_path nor file_hash is provided
         """
         pass
     
     @abstractmethod
-    def exists(self, file_path: str) -> bool:
+    def exists(self, file_path: Optional[str] = None, file_hash: Optional[str] = None) -> bool:
         """Check if a file exists in the index.
         
         Args:
-            file_path: Path to the file
+            file_path: Path to the file, optional if file_hash is provided
+            file_hash: Hash of the file, optional if file_path is provided
             
         Returns:
             True if exists, False otherwise
+            
+        Raises:
+            ValueError: If neither file_path nor file_hash is provided
+        """
+        pass
+    
+    @abstractmethod
+    def list(self, n: int = None) -> list[tuple[str, str]]:
+        """List items in the index.
+        
+        Args:
+            n: Number of items to return, if None return all items
+            
+        Returns:
+            list[tuple[str, str]]: List of (hash, path) tuples, sorted by path
         """
         pass
     
