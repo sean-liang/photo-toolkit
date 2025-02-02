@@ -3,7 +3,7 @@ import sys
 import dbm
 import argparse
 from pathlib import Path
-from common import find_media_files, VIDEO_EXTENSIONS, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS
+from core.common import find_files, VIDEO_EXTENSIONS, IMAGE_EXTENSIONS
 from build_hash_index import calculate_file_hash
 
 def remove_media_files(work_dir, media_type):
@@ -31,17 +31,17 @@ def remove_media_files(work_dir, media_type):
         
     found_files = []
     # Find all target type files
-    for rel_path, full_path in find_media_files(work_dir):
-        if Path(full_path).suffix.lower() in target_extensions:
-            found_files.append((rel_path, full_path))
+    for file in find_files(work_dir):
+        if Path(file).suffix.lower() in target_extensions:
+            found_files.append(file)
     
     if not found_files:
         print(f"No {media_type} files found")
         return
         
     print(f"Found {len(found_files)} {media_type} files:")
-    for rel_path, _ in found_files:
-        print(f"  - {rel_path}")
+    for file in found_files:
+        print(f"  - {Path(file).relative_to(work_dir)}")
         
     # Confirm deletion
     confirm = input("\nAre you sure you want to delete these files? (y/N): ")
@@ -51,10 +51,10 @@ def remove_media_files(work_dir, media_type):
         
     # Execute deletion
     with dbm.open(db_path, 'c') as db:
-        for rel_path, full_path in found_files:
+        for file in found_files:
             try:
                 # Calculate file hash for index removal
-                file_hash = calculate_file_hash(full_path)
+                file_hash = calculate_file_hash(file)
                 hash_key = f"h:{file_hash}".encode()
                 
                 # Remove from index
@@ -62,10 +62,10 @@ def remove_media_files(work_dir, media_type):
                     del db[hash_key]
                     
                 # Delete file
-                os.remove(full_path)
-                print(f"Deleted: {rel_path}")
+                os.remove(file)
+                print(f"Deleted: {Path(file).relative_to(work_dir)}")
             except Exception as e:
-                print(f"Failed to delete {rel_path}: {str(e)}")
+                print(f"Failed to delete {Path(file).relative_to(work_dir)}: {str(e)}")
 
 def main():
     parser = argparse.ArgumentParser(description="Remove media files of specified type")

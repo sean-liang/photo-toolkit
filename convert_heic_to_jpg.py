@@ -1,13 +1,15 @@
 import os
-import argparse
 from pathlib import Path
-from pillow_heif import register_heif_opener
+import pillow_heif
 from PIL import Image
 from tqdm import tqdm
+from core.common import find_files
+
+HEIC_EXTENSIONS = {'.heic'}
 
 def convert_heic_to_jpeg(input_dir: str, output_dir: str = None):
     # Register HEIF file opener
-    register_heif_opener()
+    pillow_heif.register_heif_opener()
     
     if output_dir is None:
         parent_dir = os.path.dirname(input_dir)
@@ -18,34 +20,34 @@ def convert_heic_to_jpeg(input_dir: str, output_dir: str = None):
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
     
-    # Collect all HEIC files
-    heic_files = []
-    for root, _, files in os.walk(input_dir):
-        for file in files:
-            if file.lower().endswith(('.heic', '.heif')):
-                heic_files.append((root, file))
+    # Find all HEIC files
+    heic_files = list(find_files(input_dir, extensions=HEIC_EXTENSIONS))
+    
+    if not heic_files:
+        print("No HEIC files found")
+        return
     
     # Use tqdm to show progress
-    for root, file in tqdm(heic_files, desc="Converting HEIC to JPEG"):
-        input_path = os.path.join(root, file)
-        output_filename = os.path.splitext(file)[0] + '.jpg'
-        output_path = os.path.join(output_dir, output_filename)
-        
+    for file in tqdm(heic_files, desc="Converting HEIC to JPEG"):
         try:
             # Open HEIC file
-            image = Image.open(input_path)
-            
-            # Get original image EXIF data
-            exif = image.getexif()
-            
-            # Convert to RGB mode (if needed)
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Convert and save as JPEG, preserving EXIF data
-            image.save(output_path, 'JPEG', quality=95, exif=exif)
+            with Image.open(file) as img:
+                # Create output filename
+                output_filename = os.path.splitext(os.path.basename(file))[0] + '.jpg'
+                output_path = os.path.join(output_dir, output_filename)
+                
+                # Get original image EXIF data
+                exif = img.getexif()
+                
+                # Convert to RGB mode (if needed)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Save as JPEG, preserving EXIF data
+                img.save(output_path, 'JPEG', quality=95, exif=exif)
+                
         except Exception as e:
-            tqdm.write(f'Conversion failed for {input_path}: {str(e)}')
+            tqdm.write(f'Conversion failed for {file}: {str(e)}')
 
 def main():
     parser = argparse.ArgumentParser(description='Convert HEIC files to JPEG format')

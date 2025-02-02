@@ -122,7 +122,40 @@ def generate_month_plot(stats, year):
         margin=dict(l=50, r=50, t=50, b=50)  
     )
     
-    return fig.to_html(full_html=False, include_plotlyjs=True)
+    # Create table HTML
+    table_html = '''
+    <style>
+        .month-stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .month-stats-table th, .month-stats-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        .month-stats-table th {
+            background-color: #f2f2f2;
+        }
+    </style>
+    <table class="month-stats-table">
+        <tr>
+    '''
+    
+    # Add month headers
+    for month in month_labels:
+        table_html += f'<th>{month}</th>'
+    table_html += '</tr><tr>'
+    
+    # Add count data
+    for count in monthly_counts:
+        table_html += f'<td>{count}</td>'
+    table_html += '</tr></table>'
+    
+    # Combine plot and table
+    return fig.to_html(full_html=False, include_plotlyjs=True) + table_html
 
 def generate_report(stats, output_file):
     years = sorted(stats.keys(), reverse=True)

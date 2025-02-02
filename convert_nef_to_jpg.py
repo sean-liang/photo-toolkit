@@ -4,6 +4,7 @@ import rawpy
 from PIL import Image
 from tqdm import tqdm
 import piexif
+from core.common import find_files
 
 def filter_exif(exif_dict):
     """Filter EXIF dictionary to keep only essential tags"""
@@ -57,14 +58,14 @@ def convert_nef_to_jpg(input_dir: str, output_dir: str):
     # Create output directory if it doesn't exist
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Get all NEF files
-    nef_files = list(input_path.glob('**/*.NEF')) + list(input_path.glob('**/*.nef'))
+    # Find all NEF files
+    nef_files = find_files(input_dir, extensions={'.nef'})
     
     # Process each NEF file
     for nef_file in tqdm(nef_files, desc="Converting NEF to JPG"):
         try:
             # Get relative path to maintain directory structure
-            rel_path = nef_file.relative_to(input_path)
+            rel_path = Path(nef_file).relative_to(input_path)
             # Create output path with jpg extension
             jpg_path = output_path / rel_path.with_suffix('.jpg')
             # Create parent directories if they don't exist

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-import os
 import shutil
 from pathlib import Path
 import zipfile
 from tqdm import tqdm
 import piexif
 import json
+from core.common import find_files
+
+LIVP_EXTENSIONS = {'.livp'}
 
 def extract_livp(livp_path, output_path):
     """Extract MOV file and EXIF information from LIVP file"""
@@ -71,7 +73,7 @@ def process_livp_files(input_dir, output_dir):
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Get all LIVP files
-    livp_files = list(input_path.rglob("*.livp"))
+    livp_files = find_files(input_dir, extensions=LIVP_EXTENSIONS)
     
     if not livp_files:
         print("No LIVP files found")
@@ -79,12 +81,12 @@ def process_livp_files(input_dir, output_dir):
 
     for livp_file in tqdm(livp_files, desc="Extracting MOV files"):
         # Build output file path, maintaining relative path structure
-        relative_path = livp_file.relative_to(input_path)
+        relative_path = Path(livp_file).relative_to(input_path)
         output_file = output_path / relative_path.with_suffix('.mov')
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Extract file
-        if extract_livp(str(livp_file), str(output_file)):
+        if extract_livp(livp_file, str(output_file)):
             tqdm.write(f"Successfully extracted: {relative_path}")
         else:
             tqdm.write(f"Failed to extract: {relative_path}")

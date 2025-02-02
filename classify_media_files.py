@@ -1,7 +1,7 @@
 import os
 import shutil
 import argparse
-from common import find_all_files, is_image_file, is_video_file
+from core.common import find_all_files, is_image_file, is_video_file
 from convert_heic_to_jpg import convert_heic_to_jpeg
 from convert_livp_to_mp4 import process_livp_files
 from tqdm import tqdm
